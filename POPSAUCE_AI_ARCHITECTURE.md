@@ -712,15 +712,31 @@ Use Redlock (or single Redis lock as a baseline) for `round:start` and `round:en
 
 ```ts
 // src/modules/game/round-transition.service.ts
+const LOCK_TTL_MS = 4000;
+const LOCK_RENEW_EVERY_MS = 1500; // renew well before TTL expiry
+
 export async function withRoomLock<T>(roomCode: string, fn: () => Promise<T>): Promise<T> {
   const lockKey = `lock:room:${roomCode}:transition`;
   const token = crypto.randomUUID();
-  const acquired = await redis.set(lockKey, token, { NX: true, PX: 4000 });
+  const acquired = await redis.set(lockKey, token, { NX: true, PX: LOCK_TTL_MS });
   if (!acquired) throw new Error('ROOM_TRANSITION_IN_PROGRESS');
+
+  const renewTimer = setInterval(async () => {
+    try {
+      // compare-and-pexpire so only the lock owner can renew TTL
+      await redis.eval(
+        `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) else return 0 end`,
+        { keys: [lockKey], arguments: [token, String(LOCK_TTL_MS)] },
+      );
+    } catch (err) {
+      logger.warn({ roomCode, err }, 'failed to renew room transition lock');
+    }
+  }, LOCK_RENEW_EVERY_MS);
 
   try {
     return await fn();
   } finally {
+    clearInterval(renewTimer);
     // compare-and-delete (Lua) to avoid unlocking someone else's lock
     await redis.eval(
       `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`,
@@ -729,6 +745,8 @@ export async function withRoomLock<T>(roomCode: string, fn: () => Promise<T>): P
   }
 }
 ```
+
+**Why this matters:** a fixed TTL without renewal can expire during slow transitions, allowing a second node to acquire the same room lock and run duplicate `round:start`/`round:end` handlers. Renewing lock ownership until `fn()` completes keeps transition execution single-writer.
 
 ### C) Idempotent command handling
 Every state-changing command (`round:start`, `round:end`, `room:kick`) accepts a `commandId` (UUID from client). Store recent IDs in Redis with TTL to avoid duplicate execution from retries.
