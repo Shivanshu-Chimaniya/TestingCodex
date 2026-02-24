@@ -1,3 +1,5 @@
+import jwt from 'jsonwebtoken';
+import { env } from '../../config/env.js';
 import type { Request, Response } from 'express';
 import { createRoomSchema, joinRoomSchema } from './room.schema.js';
 import * as roomService from './room.service.js';
@@ -14,7 +16,13 @@ export function createRoom(req: Request, res: Response) {
     maxPlayers: parsed.data.maxPlayers,
   });
 
-  return res.status(201).json({ room, joinToken: 'todo-short-lived-room-jwt' });
+  const websocketJoinToken = jwt.sign(
+    { sub: req.auth.userId, roomCode: room.code, type: 'socket_join' },
+    env.JWT_ACCESS_SECRET,
+    { expiresIn: '5m' },
+  );
+
+  return res.status(201).json({ room, websocketJoinToken });
 }
 
 export function getRoom(req: Request, res: Response) {
