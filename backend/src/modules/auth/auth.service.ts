@@ -5,6 +5,19 @@ import type { User } from '../../types/models.js';
 
 const usersByEmail = new Map<string, User>();
 
+
+function createAccessToken(user: User) {
+  return jwt.sign({ sub: user.id, username: user.username }, env.JWT_ACCESS_SECRET, {
+    expiresIn: '15m',
+  });
+}
+
+function createRefreshToken(user: User) {
+  return jwt.sign({ sub: user.id, type: 'refresh' }, env.JWT_REFRESH_SECRET, {
+    expiresIn: '7d',
+  });
+}
+
 export function register(username: string, email: string, password: string): User {
   if (usersByEmail.has(email)) {
     throw new Error('EMAIL_TAKEN');
@@ -27,11 +40,21 @@ export function login(email: string, password: string) {
     throw new Error('INVALID_CREDENTIALS');
   }
 
-  const token = jwt.sign({ sub: user.id, username: user.username }, env.JWT_ACCESS_SECRET, {
-    expiresIn: '15m',
-  });
+  return {
+    user,
+    accessToken: createAccessToken(user),
+    refreshToken: createRefreshToken(user),
+  };
+}
 
-  return { user, accessToken: token };
+export function refreshAccessToken(refreshToken: string) {
+  const payload = jwt.verify(refreshToken, env.JWT_REFRESH_SECRET) as { sub: string; type?: string };
+  if (payload.type !== 'refresh') throw new Error('INVALID_REFRESH_TOKEN');
+
+  const user = getUserById(payload.sub);
+  if (!user) throw new Error('INVALID_REFRESH_TOKEN');
+
+  return { accessToken: createAccessToken(user) };
 }
 
 export function getUserById(userId: string) {

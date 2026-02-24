@@ -2,9 +2,9 @@
 
 This repository now includes the **first implementation slice** from the architecture doc:
 
-- Express API with auth + room endpoints.
+- Express API with auth + room endpoints, including access + refresh token flow.
 - Socket.io `/game` namespace with JWT auth middleware.
-- Room join real-time event (`room:join`) and `room:player_joined` broadcast.
+- Real-time room + gameplay events: `room:join`, `round:start`, `answer:submit`, countdown/tick/end, leaderboard sync.
 - In-memory services for users, rooms, and basic room state.
 
 ## Run
