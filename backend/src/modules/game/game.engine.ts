@@ -1,3 +1,5 @@
+import { redis } from '../../config/redis.js';
+import { nowMs } from '../../utils/time.js';
 import * as roomService from '../rooms/room.service.js';
 import { canSubmitAnswer } from './antiCheat.js';
 import { normalizeAnswer } from './normalization.js';
@@ -11,7 +13,7 @@ function getRuntime(roomCode: string): RoomRuntime {
   if (existing) return existing;
 
   const runtime: RoomRuntime = {
-    acceptedAnswers: new Set(['react', 'vue', 'angular', 'svelte', 'next.js']),
+    acceptedAnswers: new Set(['react', 'vue', 'angular', 'svelte', 'next js']),
     foundAnswers: new Set(),
     scores: new Map(),
     roundStatus: 'idle',
@@ -56,7 +58,7 @@ export function getLeaderboard(roomCode: string): LeaderboardEntry[] {
 export function startRound(roomCode: string, durationMs: number) {
   getRoomOrThrow(roomCode);
   const runtime = getRuntime(roomCode);
-  const now = Date.now();
+  const now = nowMs();
 
   runtime.foundAnswers.clear();
   runtime.recentSubmissions.clear();
@@ -76,7 +78,7 @@ export function endRound(roomCode: string) {
   const runtime = getRuntime(roomCode);
 
   runtime.roundStatus = 'ended';
-  runtime.endsAt = Date.now();
+  runtime.endsAt = nowMs();
 
   return {
     endedAt: runtime.endsAt,
@@ -85,7 +87,7 @@ export function endRound(roomCode: string) {
   };
 }
 
-export function submitAnswer(roomCode: string, userId: string, rawAnswer: string) {
+export async function submitAnswer(roomCode: string, userId: string, rawAnswer: string) {
   getRoomOrThrow(roomCode);
   const runtime = getRuntime(roomCode);
 
@@ -93,7 +95,7 @@ export function submitAnswer(roomCode: string, userId: string, rawAnswer: string
     return { ok: false as const, code: 'ROUND_NOT_ACTIVE' };
   }
 
-  const now = Date.now();
+  const now = nowMs();
   const recent = runtime.recentSubmissions.get(userId) ?? [];
   const antiCheat = canSubmitAnswer(rawAnswer, recent, now);
   if (!antiCheat.ok) {
@@ -106,11 +108,17 @@ export function submitAnswer(roomCode: string, userId: string, rawAnswer: string
     [...recent.filter((ts) => now - ts < 1000), now],
   );
 
-  if (!runtime.acceptedAnswers.has(normalized)) {
-    return { ok: false as const, code: 'INVALID_ANSWER' };
+  const acceptedSetKey = `round:${roomCode}:accepted`;
+  if (!(await redis.sIsMember(acceptedSetKey, normalized))) {
+    if (!runtime.acceptedAnswers.has(normalized)) {
+      return { ok: false as const, code: 'INVALID_ANSWER' };
+    }
+
+    await redis.sAdd(acceptedSetKey, normalized);
   }
 
-  if (runtime.foundAnswers.has(normalized)) {
+  const isFirst = await redis.sAdd(`round:${roomCode}:found`, normalized);
+  if (!isFirst) {
     return { ok: false as const, code: 'DUPLICATE_ANSWER' };
   }
 

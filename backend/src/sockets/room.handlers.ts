@@ -3,6 +3,14 @@ import * as gameEngine from '../modules/game/game.engine.js';
 import * as roomService from '../modules/rooms/room.service.js';
 import type { Ack, RoomJoinPayload, RoundStartPayload } from './events.js';
 
+const presenceByRoom = new Map<string, Map<string, string>>();
+
+function addPresence(roomCode: string, userId: string, socketId: string) {
+  const roomPresence = presenceByRoom.get(roomCode) ?? new Map<string, string>();
+  roomPresence.set(userId, socketId);
+  presenceByRoom.set(roomCode, roomPresence);
+}
+
 export function makeRoomHandlers(io: Server, roundIntervals: Map<string, NodeJS.Timeout>) {
   const nsp = io.of('/game');
 
@@ -13,21 +21,24 @@ export function makeRoomHandlers(io: Server, roundIntervals: Map<string, NodeJS.
     roundIntervals.delete(roomCode);
   }
 
-  function onRoomJoin(socket: Socket, payload: RoomJoinPayload, ack: Ack<{ state: unknown }>) {
+  async function onRoomJoin(socket: Socket, payload: RoomJoinPayload, ack: Ack<{ state: unknown }>) {
     const user = socket.data.user as { id: string; username: string } | undefined;
     if (!user) return ack?.({ ok: false, code: 'UNAUTHORIZED' });
 
     try {
-      const room = roomService.joinRoom(payload.roomCode, user.id, payload.password);
-      socket.join(room.code);
+      const room = await roomService.getByCode(payload.roomCode);
+      if (!room) return ack?.({ ok: false, code: 'ROOM_NOT_FOUND' });
 
-      const state = gameEngine.getRoomState(room.code);
-      const leaderboard = gameEngine.getLeaderboard(room.code);
+      const allowed = await roomService.canJoin(room, user.id, payload.password);
+      if (!allowed) return ack?.({ ok: false, code: 'FORBIDDEN' });
 
+      await roomService.joinRoom(room.code, user.id, payload.password);
+      await socket.join(room.code);
+      addPresence(room.code, user.id, socket.id);
+
+      const state = await gameEngine.getRoomState(room.code);
       ack?.({ ok: true, data: { state } });
-      socket.emit('room:state', state);
-      socket.emit('leaderboard:update', leaderboard);
-      nsp.to(room.code).emit('room:player_joined', { userId: user.id, username: user.username });
+      io.to(room.code).emit('room:player_joined', { userId: user.id, username: user.username });
     } catch (error) {
       if (error instanceof Error) {
         return ack?.({ ok: false, code: error.message });
