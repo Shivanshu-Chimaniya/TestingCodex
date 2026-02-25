@@ -13,6 +13,7 @@ import { leaderboardRouter } from './modules/leaderboard/leaderboard.routes.js';
 import { roomRouter } from './modules/rooms/room.routes.js';
 import { aiRouter } from './modules/ai/ai.routes.js';
 import { categoriesRouter } from './modules/categories/categories.routes.js';
+import { advancedRouter } from './modules/advanced/advanced.routes.js';
 
 export function createApp() {
   const app = express();
@@ -52,6 +53,7 @@ export function createApp() {
   app.use('/api/categories', categoriesRouter);
   app.use('/api/leaderboards', leaderboardRouter);
   app.use('/api/rooms', roomRouter);
+  app.use('/api/advanced', advancedRouter);
 
   app.use(errorMiddleware);
 
