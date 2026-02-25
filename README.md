@@ -1,13 +1,12 @@
-# PopSauce AI - Backend Architecture (Part 3 Completed)
+# PopSauce AI - Backend + Frontend Architecture Slices
 
-This repository now includes the **third implementation slice** from the architecture doc (backend structure):
+This repository includes implementation slices from the architecture document:
 
-- Split socket handlers (`room.handlers`, `answer.handlers`) with typed event contracts.
-- Expanded game engine internals with modular normalization, anti-cheat checks, and dynamic scoring.
-- Validation + rate-limit + error middleware applied at API boundaries.
-- Existing auth + room REST endpoints and `/game` Socket.io namespace remain fully wired.
+- Backend modular Socket.io + REST scaffolding (auth, rooms, game namespace).
+- Frontend React + Zustand + React Query architecture under `frontend/`.
+- Real-time room/game wiring patterns with sequence-aware leaderboard syncing.
 
-## Run
+## Run backend
 
 ```bash
 npm install
@@ -15,3 +14,13 @@ npm run dev
 ```
 
 Server defaults to port `3000`.
+
+## Run frontend
+
+```bash
+cd frontend
+npm install
+npm run dev -- --host 0.0.0.0 --port 4173
+```
+
+Frontend defaults to port `4173`.
