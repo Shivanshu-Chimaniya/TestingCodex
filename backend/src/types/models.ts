@@ -13,4 +13,6 @@ export interface Room {
   maxPlayers: number;
   status: 'lobby' | 'active' | 'finished';
   players: string[];
+  createdAt: number;
+  updatedAt: number;
 }

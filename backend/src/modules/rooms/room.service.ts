@@ -10,6 +10,7 @@ export function createRoom(input: {
   let code = roomRepo.generateRoomCode();
   while (roomRepo.roomCodeExists(code)) code = roomRepo.generateRoomCode();
 
+  const now = Date.now();
   const room: Room = {
     code,
     hostUserId: input.hostUserId,
@@ -18,6 +19,8 @@ export function createRoom(input: {
     maxPlayers: input.maxPlayers,
     status: 'lobby',
     players: [input.hostUserId],
+    createdAt: now,
+    updatedAt: now,
   };
 
   return roomRepo.saveRoom(room);
@@ -42,10 +45,10 @@ export function joinRoom(code: string, userId: string, password?: string) {
   const room = getRoomByCode(code);
   if (!room) throw new Error('ROOM_NOT_FOUND');
   if (!canJoin(room, userId, password)) throw new Error('FORBIDDEN');
-  if (room.players.includes(userId)) return room;
+  if (room.players.includes(userId)) return roomRepo.touchRoom(code) ?? room;
 
   room.players.push(userId);
-  return room;
+  return roomRepo.touchRoom(code) ?? room;
 }
 
 export function startRoom(code: string, userId: string) {
@@ -53,7 +56,7 @@ export function startRoom(code: string, userId: string) {
   if (!room) throw new Error('ROOM_NOT_FOUND');
   if (room.hostUserId !== userId) throw new Error('FORBIDDEN');
   room.status = 'active';
-  return room;
+  return roomRepo.touchRoom(code) ?? room;
 }
 
 export function endRoom(code: string, userId: string) {
@@ -61,5 +64,14 @@ export function endRoom(code: string, userId: string) {
   if (!room) throw new Error('ROOM_NOT_FOUND');
   if (room.hostUserId !== userId) throw new Error('FORBIDDEN');
   room.status = 'finished';
-  return room;
+  return roomRepo.touchRoom(code) ?? room;
+}
+
+
+export function deleteRoom(code: string) {
+  return roomRepo.deleteRoom(code);
+}
+
+export function listRooms() {
+  return roomRepo.listRooms();
 }

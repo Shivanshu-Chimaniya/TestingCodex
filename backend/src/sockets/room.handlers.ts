@@ -14,11 +14,12 @@ function addPresence(roomCode: string, userId: string, socketId: string) {
 export function makeRoomHandlers(io: Server, roundIntervals: Map<string, NodeJS.Timeout>) {
   const nsp = io.of('/game');
 
-  function stopRoundTicker(roomCode: string) {
-    const interval = roundIntervals.get(roomCode);
-    if (!interval) return;
-    clearInterval(interval);
-    roundIntervals.delete(roomCode);
+  function stopRoundTicker(key: string) {
+    const timer = roundIntervals.get(key);
+    if (!timer) return;
+    clearInterval(timer);
+    clearTimeout(timer);
+    roundIntervals.delete(key);
   }
 
   async function onRoomJoin(socket: Socket, payload: RoomJoinPayload, ack: Ack<{ state: unknown }>) {
@@ -47,7 +48,7 @@ export function makeRoomHandlers(io: Server, roundIntervals: Map<string, NodeJS.
     }
   }
 
-  function onRoundStart(socket: Socket, payload: RoundStartPayload, ack: Ack<{ countdownMs: number }>) {
+  async function onRoundStart(socket: Socket, payload: RoundStartPayload, ack: Ack<{ countdownMs: number }>) {
     const user = socket.data.user as { id: string } | undefined;
     if (!user) return ack?.({ ok: false, code: 'UNAUTHORIZED' });
 
@@ -58,12 +59,14 @@ export function makeRoomHandlers(io: Server, roundIntervals: Map<string, NodeJS.
       if (room.players.length < 1) return ack?.({ ok: false, code: 'NOT_ENOUGH_PLAYERS' });
 
       const countdownMs = 3000;
-      gameEngine.beginCountdown(room.code, countdownMs);
+      await gameEngine.beginCountdown(room.code, countdownMs);
       nsp.to(room.code).emit('round:countdown', { roomCode: room.code, countdownMs });
       ack?.({ ok: true, data: { countdownMs } });
 
-      setTimeout(() => {
-        const started = gameEngine.startRound(room.code, payload.durationMs ?? 60000, {
+      const countdownKey = `${room.code}:countdown`;
+      const countdownTimeout = setTimeout(async () => {
+        stopRoundTicker(countdownKey);
+        const started = await gameEngine.startRound(room.code, payload.durationMs ?? 60000, {
           difficulty: payload.difficulty,
         });
 
@@ -74,7 +77,7 @@ export function makeRoomHandlers(io: Server, roundIntervals: Map<string, NodeJS.
         });
 
         stopRoundTicker(room.code);
-        const ticker = setInterval(() => {
+        const ticker = setInterval(async () => {
           const roomState = gameEngine.getRoomState(room.code);
           if (roomState.roundStatus !== 'active') {
             stopRoundTicker(room.code);
@@ -86,15 +89,16 @@ export function makeRoomHandlers(io: Server, roundIntervals: Map<string, NodeJS.
 
           if (remainingMs === 0) {
             stopRoundTicker(room.code);
-            const ended = gameEngine.endRound(room.code, started.endsAt);
+            const ended = await gameEngine.endRound(room.code, started.endsAt);
             nsp.to(room.code).emit('round:end', ended);
 
-            const results = gameEngine.finalizeResults(room.code);
+            const results = await gameEngine.finalizeResults(room.code);
             nsp.to(room.code).emit('leaderboard:update', results.leaderboard);
           }
         }, 250);
         roundIntervals.set(room.code, ticker);
       }, countdownMs);
+      roundIntervals.set(countdownKey, countdownTimeout);
     } catch (error) {
       if (error instanceof Error) {
         return ack?.({ ok: false, code: error.message });

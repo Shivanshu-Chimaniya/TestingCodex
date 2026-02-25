@@ -1,4 +1,5 @@
 import type { Server, Socket } from 'socket.io';
+import { socketEventAllowed } from './rateLimit.middleware.js';
 import { makeAnswerHandlers } from './answer.handlers.js';
 import type { AnswerSubmitPayload, RoomJoinPayload, RoundStartPayload } from './events.js';
 import { makeRoomHandlers } from './room.handlers.js';
@@ -6,14 +7,27 @@ import { makeRoomHandlers } from './room.handlers.js';
 export function registerGameNamespace(io: Server) {
   const nsp = io.of('/game');
   const roundIntervals = new Map<string, NodeJS.Timeout>();
+  const socketToRooms = new WeakMap<Socket, Set<string>>();
 
   const roomHandlers = makeRoomHandlers(io, roundIntervals);
   const answerHandlers = makeAnswerHandlers(io);
 
   nsp.on('connection', (socket: Socket) => {
-    socket.on('room:join', (payload: RoomJoinPayload, ack) => roomHandlers.onRoomJoin(socket, payload, ack));
+    socketToRooms.set(socket, new Set<string>());
+
+    socket.use(async (_packet, next) => {
+      const allowed = await socketEventAllowed(socket);
+      if (!allowed) return next(new Error('RATE_LIMITED'));
+      return next();
+    });
+
+    socket.on('room:join', (payload: RoomJoinPayload, ack) => {
+      socketToRooms.get(socket)?.add(payload.roomCode);
+      roomHandlers.onRoomJoin(socket, payload, ack);
+    });
 
     socket.on('room:leave', (payload: { roomCode: string }, ack) => {
+      socketToRooms.get(socket)?.delete(payload.roomCode);
       socket.leave(payload.roomCode);
       nsp.to(payload.roomCode).emit('room:player_left', { userId: socket.data.user?.id });
       ack?.({ ok: true, data: { left: true } });
@@ -37,6 +51,10 @@ export function registerGameNamespace(io: Server) {
           nsp.to(roomCode).emit('room:player_left', { userId: socket.data.user?.id });
         }
       }
+    });
+
+    socket.on('disconnect', () => {
+      socketToRooms.delete(socket);
     });
   });
 }
