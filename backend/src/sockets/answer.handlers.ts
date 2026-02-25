@@ -28,6 +28,15 @@ export function makeAnswerHandlers(io: Server) {
     });
 
     nsp.to(payload.roomCode).emit('leaderboard:update', result.data.leaderboard);
+
+    if (result.data.allAnswersFound) {
+      const ended = gameEngine.endRound(payload.roomCode);
+      nsp.to(payload.roomCode).emit('round:end', ended);
+
+      const results = gameEngine.finalizeResults(payload.roomCode);
+      nsp.to(payload.roomCode).emit('leaderboard:update', results.leaderboard);
+    }
+
     return ack?.({
       ok: true,
       data: {

@@ -8,6 +8,7 @@ export interface RoomJoinPayload {
 export interface RoundStartPayload {
   roomCode: string;
   durationMs?: number;
+  difficulty?: 'easy' | 'medium' | 'hard';
 }
 
 export interface AnswerSubmitPayload {
