@@ -1,13 +1,14 @@
 import { z } from 'zod';
+import { canonicalizeString } from '../../utils/sanitize.js';
 
 export const registerSchema = z.object({
-  username: z.string().min(3),
-  email: z.string().email(),
+  username: z.string().min(3).max(30).transform(canonicalizeString),
+  email: z.string().email().transform((value) => canonicalizeString(value).toLowerCase()),
   password: z.string().min(6),
 });
 
 export const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().transform((value) => canonicalizeString(value).toLowerCase()),
   password: z.string().min(6),
 });
 

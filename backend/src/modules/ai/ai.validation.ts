@@ -1,13 +1,25 @@
 import { z } from 'zod';
+import { containsBlockedContent } from '../moderation/moderation.service.js';
+import { canonicalizeString } from '../../utils/sanitize.js';
 
 export const generateCategoryRequestSchema = z
   .object({
-    theme: z.string().min(3).max(80).optional(),
-    titleHint: z.string().min(3).max(80).optional(),
+    theme: z.string().min(3).max(80).transform(canonicalizeString).optional(),
+    titleHint: z.string().min(3).max(80).transform(canonicalizeString).optional(),
     language: z.string().regex(/^[a-z]{2}$/).default('en'),
     difficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
     targetAnswerCount: z.number().int().min(8).max(40).optional(),
     desiredAnswers: z.number().int().min(8).max(40).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const theme = value.theme ?? value.titleHint;
+    if (theme && containsBlockedContent(theme)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['theme'],
+        message: 'CATEGORY_THEME_MODERATION_BLOCKED',
+      });
+    }
   })
   .transform((value) => ({
     theme: value.theme ?? value.titleHint ?? 'General Knowledge',

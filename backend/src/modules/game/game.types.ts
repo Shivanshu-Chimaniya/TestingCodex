@@ -36,4 +36,5 @@ export interface RoomRuntime {
     duplicateDecayPoints: number;
   };
   recentSubmissions: Map<string, number[]>;
+  invalidAnswerTracker: Map<string, { count: number; cooldownUntil: number | null }>;
 }

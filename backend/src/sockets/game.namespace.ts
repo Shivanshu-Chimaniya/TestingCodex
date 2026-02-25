@@ -3,6 +3,15 @@ import { socketEventAllowed } from './rateLimit.middleware.js';
 import { makeAnswerHandlers } from './answer.handlers.js';
 import type { AnswerSubmitPayload, RoomJoinPayload, RoundStartPayload } from './events.js';
 import { makeRoomHandlers } from './room.handlers.js';
+import { attachSocketUser } from './auth.middleware.js';
+
+const REAUTH_GRACE_SECONDS = 60;
+
+function needsReauth(socket: Socket) {
+  const exp = (socket.data.user as { tokenExp?: number } | undefined)?.tokenExp;
+  if (!exp) return true;
+  return exp - Math.floor(Date.now() / 1000) < REAUTH_GRACE_SECONDS;
+}
 
 export function registerGameNamespace(io: Server) {
   const nsp = io.of('/game');
@@ -18,7 +27,19 @@ export function registerGameNamespace(io: Server) {
     socket.use(async (_packet, next) => {
       const allowed = await socketEventAllowed(socket);
       if (!allowed) return next(new Error('RATE_LIMITED'));
+      if (needsReauth(socket)) {
+        socket.emit('auth:reauth_required', { reason: 'ACCESS_TOKEN_EXPIRING' });
+      }
       return next();
+    });
+
+    socket.on('auth:reauth', (payload: { token: string }, ack) => {
+      try {
+        attachSocketUser(socket, payload.token);
+        ack?.({ ok: true, data: { reauthenticated: true } });
+      } catch {
+        ack?.({ ok: false, code: 'UNAUTHORIZED' });
+      }
     });
 
     socket.on('room:join', (payload: RoomJoinPayload, ack) => {

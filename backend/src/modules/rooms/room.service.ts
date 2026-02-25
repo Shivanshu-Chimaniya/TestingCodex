@@ -1,12 +1,16 @@
 import type { Room } from '../../types/models.js';
 import * as roomRepo from './room.repo.js';
+import { assertModeratedText } from '../moderation/moderation.service.js';
 
 export function createRoom(input: {
   hostUserId: string;
   visibility: 'public' | 'private';
+  name: string;
   password?: string;
   maxPlayers: number;
 }) {
+  assertModeratedText(input.name, 'room_name');
+
   let code = roomRepo.generateRoomCode();
   while (roomRepo.roomCodeExists(code)) code = roomRepo.generateRoomCode();
 
@@ -15,6 +19,7 @@ export function createRoom(input: {
     code,
     hostUserId: input.hostUserId,
     visibility: input.visibility,
+    name: input.name,
     password: input.password,
     maxPlayers: input.maxPlayers,
     status: 'lobby',

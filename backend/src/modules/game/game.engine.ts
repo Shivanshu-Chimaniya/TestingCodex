@@ -15,6 +15,8 @@ import type {
 const runtimeByRoom = new Map<string, RoomRuntime>();
 const MAX_POINTS_PER_ANSWER = 250;
 const MAX_ROOM_LIFETIME_MS = 60 * 60 * 1000;
+const INVALID_ANSWER_COOLDOWN_MS = 5000;
+const INVALID_ANSWER_THRESHOLD = 3;
 
 function getDefaultPlayerStats(): PlayerRoundStats {
   return {
@@ -59,6 +61,7 @@ function getRuntime(roomCode: string): RoomRuntime {
       duplicateDecayPoints: 5,
     },
     recentSubmissions: new Map(),
+    invalidAnswerTracker: new Map(),
   };
 
   runtimeByRoom.set(roomCode, runtime);
@@ -161,6 +164,7 @@ export async function startRound(
   runtime.foundAnswers.clear();
   runtime.foundAnswerOwners.clear();
   runtime.recentSubmissions.clear();
+  runtime.invalidAnswerTracker.clear();
   runtime.playerStats.forEach((stats) => {
     stats.streak = 0;
     stats.uniqueCorrectAnswers = 0;
@@ -172,7 +176,8 @@ export async function startRound(
   runtime.countdownEndsAt = null;
   runtime.startedAt = now;
   runtime.roundDurationMs = durationMs;
-  runtime.endsAt = now + durationMs;
+  const endsAt = now + durationMs;
+  runtime.endsAt = endsAt;
   runtime.finishedAt = null;
   runtime.difficulty = options?.difficulty ?? 'medium';
   runtime.competitiveMode = {
@@ -183,8 +188,8 @@ export async function startRound(
   await cacheRoomSnapshot(roomCode);
 
   return {
-    startedAt: runtime.startedAt,
-    endsAt: runtime.endsAt,
+    startedAt: now,
+    endsAt,
     remainingMs: durationMs,
   };
 }
@@ -229,6 +234,11 @@ export async function submitAnswer(roomCode: string, userId: string, rawAnswer: 
   }
 
   const now = nowMs();
+
+  const invalidState = runtime.invalidAnswerTracker.get(userId) ?? { count: 0, cooldownUntil: null };
+  if (invalidState.cooldownUntil && now < invalidState.cooldownUntil) {
+    return { ok: false as const, code: 'INVALID_ANSWER_COOLDOWN' };
+  }
   if (now > runtime.endsAt + runtime.graceWindowMs) {
     return { ok: false as const, code: 'ROUND_ALREADY_FINISHED' };
   }
@@ -248,6 +258,13 @@ export async function submitAnswer(roomCode: string, userId: string, rawAnswer: 
   const acceptedSetKey = `round:${roomCode}:accepted`;
   if (!(await redis.sIsMember(acceptedSetKey, normalized))) {
     if (!runtime.acceptedAnswers.has(normalized)) {
+      invalidState.count += 1;
+      if (invalidState.count >= INVALID_ANSWER_THRESHOLD) {
+        invalidState.cooldownUntil = now + INVALID_ANSWER_COOLDOWN_MS;
+        invalidState.count = 0;
+      }
+      runtime.invalidAnswerTracker.set(userId, invalidState);
+
       enqueueSubmission({
         roomCode,
         userId,
@@ -290,6 +307,8 @@ export async function submitAnswer(roomCode: string, userId: string, rawAnswer: 
 
     return { ok: false as const, code: 'DUPLICATE_ANSWER' };
   }
+
+  runtime.invalidAnswerTracker.set(userId, { count: 0, cooldownUntil: null });
 
   runtime.foundAnswers.add(normalized);
   runtime.foundAnswerOwners.set(normalized, userId);
