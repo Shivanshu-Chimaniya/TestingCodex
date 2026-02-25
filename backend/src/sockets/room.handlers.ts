@@ -1,0 +1,86 @@
+import type { Server, Socket } from 'socket.io';
+import * as gameEngine from '../modules/game/game.engine.js';
+import * as roomService from '../modules/rooms/room.service.js';
+import type { Ack, RoomJoinPayload, RoundStartPayload } from './events.js';
+
+export function makeRoomHandlers(io: Server, roundIntervals: Map<string, NodeJS.Timeout>) {
+  const nsp = io.of('/game');
+
+  function stopRoundTicker(roomCode: string) {
+    const interval = roundIntervals.get(roomCode);
+    if (!interval) return;
+    clearInterval(interval);
+    roundIntervals.delete(roomCode);
+  }
+
+  function onRoomJoin(socket: Socket, payload: RoomJoinPayload, ack: Ack<{ state: unknown }>) {
+    const user = socket.data.user as { id: string; username: string } | undefined;
+    if (!user) return ack?.({ ok: false, code: 'UNAUTHORIZED' });
+
+    try {
+      const room = roomService.joinRoom(payload.roomCode, user.id, payload.password);
+      socket.join(room.code);
+
+      const state = gameEngine.getRoomState(room.code);
+      const leaderboard = gameEngine.getLeaderboard(room.code);
+
+      ack?.({ ok: true, data: { state } });
+      socket.emit('room:state', state);
+      socket.emit('leaderboard:update', leaderboard);
+      nsp.to(room.code).emit('room:player_joined', { userId: user.id, username: user.username });
+    } catch (error) {
+      if (error instanceof Error) {
+        return ack?.({ ok: false, code: error.message });
+      }
+      return ack?.({ ok: false, code: 'UNKNOWN' });
+    }
+  }
+
+  function onRoundStart(socket: Socket, payload: RoundStartPayload, ack: Ack<{ countdownMs: number }>) {
+    const user = socket.data.user as { id: string } | undefined;
+    if (!user) return ack?.({ ok: false, code: 'UNAUTHORIZED' });
+
+    try {
+      const room = roomService.getRoomByCode(payload.roomCode);
+      if (!room) return ack?.({ ok: false, code: 'ROOM_NOT_FOUND' });
+      if (room.hostUserId !== user.id) return ack?.({ ok: false, code: 'FORBIDDEN' });
+      if (room.players.length < 1) return ack?.({ ok: false, code: 'NOT_ENOUGH_PLAYERS' });
+
+      const countdownMs = 3000;
+      nsp.to(room.code).emit('round:countdown', { roomCode: room.code, countdownMs });
+      ack?.({ ok: true, data: { countdownMs } });
+
+      setTimeout(() => {
+        const started = gameEngine.startRound(room.code, payload.durationMs ?? 60000);
+        nsp.to(room.code).emit('round:active', {
+          roomCode: room.code,
+          startedAt: started.startedAt,
+          endsAt: started.endsAt,
+        });
+
+        stopRoundTicker(room.code);
+        const ticker = setInterval(() => {
+          const remainingMs = Math.max(0, started.endsAt - Date.now());
+          nsp.to(room.code).emit('round:tick', { roomCode: room.code, remainingMs });
+
+          if (remainingMs === 0) {
+            stopRoundTicker(room.code);
+            const ended = gameEngine.endRound(room.code);
+            nsp.to(room.code).emit('round:end', ended);
+          }
+        }, 1000);
+        roundIntervals.set(room.code, ticker);
+      }, countdownMs);
+    } catch (error) {
+      if (error instanceof Error) {
+        return ack?.({ ok: false, code: error.message });
+      }
+      return ack?.({ ok: false, code: 'UNKNOWN' });
+    }
+  }
+
+  return {
+    onRoomJoin,
+    onRoundStart,
+  };
+}

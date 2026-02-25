@@ -1,11 +1,11 @@
-# PopSauce AI - Initial Backend Skeleton
+# PopSauce AI - Backend Architecture (Part 3 Completed)
 
-This repository now includes the **first implementation slice** from the architecture doc:
+This repository now includes the **third implementation slice** from the architecture doc (backend structure):
 
-- Express API with auth + room endpoints, including access + refresh token flow.
-- Socket.io `/game` namespace with JWT auth middleware.
-- Real-time room + gameplay events: `room:join`, `round:start`, `answer:submit`, countdown/tick/end, leaderboard sync.
-- In-memory services for users, rooms, and basic room state.
+- Split socket handlers (`room.handlers`, `answer.handlers`) with typed event contracts.
+- Expanded game engine internals with modular normalization, anti-cheat checks, and dynamic scoring.
+- Validation + rate-limit + error middleware applied at API boundaries.
+- Existing auth + room REST endpoints and `/game` Socket.io namespace remain fully wired.
 
 ## Run
 
