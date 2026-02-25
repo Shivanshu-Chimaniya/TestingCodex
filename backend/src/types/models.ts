@@ -2,13 +2,14 @@ export interface User {
   id: string;
   username: string;
   email: string;
-  password: string;
+  passwordHash: string;
 }
 
 export interface Room {
   code: string;
   hostUserId: string;
   visibility: 'public' | 'private';
+  name: string;
   password?: string;
   maxPlayers: number;
   status: 'lobby' | 'active' | 'finished';

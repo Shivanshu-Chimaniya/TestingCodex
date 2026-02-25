@@ -9,7 +9,7 @@ import { registerGameNamespace } from './game.namespace.js';
 
 export async function createSocketServer(server: HttpServer) {
   const io = new Server(server, {
-    cors: { origin: '*' },
+    cors: { origin: env.CORS_ORIGIN, credentials: true },
   });
 
   if (env.REDIS_URL) {

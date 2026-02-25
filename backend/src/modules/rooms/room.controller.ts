@@ -9,9 +9,11 @@ export function createRoom(req: Request, res: Response) {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   if (!req.auth) return res.status(401).json({ error: 'UNAUTHORIZED' });
 
-  const room = roomService.createRoom({
+  try {
+    const room = roomService.createRoom({
     hostUserId: req.auth.userId,
     visibility: parsed.data.visibility,
+    name: parsed.data.name,
     password: parsed.data.password,
     maxPlayers: parsed.data.maxPlayers,
   });
@@ -22,7 +24,13 @@ export function createRoom(req: Request, res: Response) {
     { expiresIn: '5m' },
   );
 
-  return res.status(201).json({ room, websocketJoinToken });
+    return res.status(201).json({ room, websocketJoinToken });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'ROOM_NAME_MODERATION_BLOCKED') {
+      return res.status(400).json({ error: 'ROOM_NAME_MODERATION_BLOCKED' });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR' });
+  }
 }
 
 export function getRoom(req: Request, res: Response) {
