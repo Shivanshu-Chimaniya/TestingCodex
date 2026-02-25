@@ -4,6 +4,7 @@ import { makeAnswerHandlers } from './answer.handlers.js';
 import type { AnswerSubmitPayload, RoomJoinPayload, RoundStartPayload } from './events.js';
 import { makeRoomHandlers } from './room.handlers.js';
 import { attachSocketUser } from './auth.middleware.js';
+import { logger } from '../config/logger.js';
 
 const REAUTH_GRACE_SECONDS = 60;
 
@@ -23,6 +24,10 @@ export function registerGameNamespace(io: Server) {
 
   nsp.on('connection', (socket: Socket) => {
     socketToRooms.set(socket, new Set<string>());
+
+    logger.withContext({ userId: socket.data.user?.id }, () => {
+      logger.info('socket.connected', { socketId: socket.id });
+    });
 
     socket.use(async (_packet, next) => {
       const allowed = await socketEventAllowed(socket);
@@ -74,8 +79,11 @@ export function registerGameNamespace(io: Server) {
       }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
       socketToRooms.delete(socket);
+      logger.withContext({ userId: socket.data.user?.id }, () => {
+        logger.trackSocketDisconnect({ socketId: socket.id, reason });
+      });
     });
   });
 }

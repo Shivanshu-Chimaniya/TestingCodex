@@ -2,6 +2,7 @@ import type { Server, Socket } from 'socket.io';
 import * as gameEngine from '../modules/game/game.engine.js';
 import * as roomService from '../modules/rooms/room.service.js';
 import type { Ack, RoomJoinPayload, RoundStartPayload } from './events.js';
+import { logger } from '../config/logger.js';
 
 const presenceByRoom = new Map<string, Map<string, string>>();
 
@@ -34,6 +35,9 @@ export function makeRoomHandlers(io: Server, roundIntervals: Map<string, NodeJS.
       if (!allowed) return ack?.({ ok: false, code: 'FORBIDDEN' });
 
       await roomService.joinRoom(room.code, user.id, payload.password);
+      logger.withContext({ roomId: room.code, userId: user.id }, () => {
+        logger.info('room.joined', { socketId: socket.id });
+      });
       await socket.join(room.code);
       addPresence(room.code, user.id, socket.id);
 
@@ -60,6 +64,9 @@ export function makeRoomHandlers(io: Server, roundIntervals: Map<string, NodeJS.
 
       const countdownMs = 3000;
       await gameEngine.beginCountdown(room.code, countdownMs);
+      logger.withContext({ roomId: room.code, userId: user.id }, () => {
+        logger.info('round.countdown.started', { countdownMs });
+      });
       nsp.to(room.code).emit('round:countdown', { roomCode: room.code, countdownMs });
       ack?.({ ok: true, data: { countdownMs } });
 

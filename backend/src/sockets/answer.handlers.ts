@@ -1,6 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import * as gameEngine from '../modules/game/game.engine.js';
 import type { Ack, AnswerSubmitPayload } from './events.js';
+import { logger } from '../config/logger.js';
 
 export function makeAnswerHandlers(io: Server) {
   const nsp = io.of('/game');
@@ -13,11 +14,15 @@ export function makeAnswerHandlers(io: Server) {
     const user = socket.data.user as { id: string } | undefined;
     if (!user) return ack?.({ ok: false, code: 'UNAUTHORIZED' });
 
+    logger.setContext({ roomId: payload.roomCode, userId: user.id });
     const result = await gameEngine.submitAnswer(payload.roomCode, user.id, payload.answer);
     if (!result.ok) {
+      logger.warn('answer.rejected', { code: result.code });
       socket.emit('answer:rejected', { roomCode: payload.roomCode, code: result.code });
       return ack?.({ ok: false, code: result.code });
     }
+
+    logger.info('answer.accepted', { pointsAwarded: result.data.pointsAwarded });
 
     nsp.to(payload.roomCode).emit('answer:accepted', {
       roomCode: payload.roomCode,
