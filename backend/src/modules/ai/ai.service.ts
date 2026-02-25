@@ -155,7 +155,7 @@ async function robustGenerate(input: GenerateCategoryRequest, prompt: string): P
     return clipAndValidateOutput(validated.data, input.targetAnswerCount);
   }
 
-  logger.warn('ai.category_generation_failed', {
+  logger.trackAiValidationFailure({
     ...PROVIDER_META,
     theme: input.theme,
     difficulty: input.difficulty,

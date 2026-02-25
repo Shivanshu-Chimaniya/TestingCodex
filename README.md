@@ -24,3 +24,9 @@ npm run dev -- --host 0.0.0.0 --port 4173
 ```
 
 Frontend defaults to port `4173`.
+
+## DevOps / Deployment
+
+- Environment template: `.env.example`
+- CI/CD workflow: `.github/workflows/ci-cd.yml`
+- Deployment/logging runbook: `docs/devops-deployment.md`

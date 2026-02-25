@@ -19,18 +19,18 @@ if (env.MONGO_URI) {
 }
 
 setInterval(() => {
-  roomCleanupJob().catch((error: unknown) => logger.error('roomCleanup.job failed', error));
+  roomCleanupJob().catch((error: unknown) => logger.error('roomCleanup.job.failed', { error }));
 }, 60_000);
 
 setInterval(() => {
-  flushSubmissionQueue().catch((error: unknown) => logger.error('submission.queue flush failed', error));
+  flushSubmissionQueue().catch((error: unknown) => logger.error('submission.queue.flush_failed', { error }));
   const queued = queuedSubmissionCount();
   if (queued > 200) {
-    logger.warn('submission.queue backlog is growing', { queued });
+    logger.warn('submission.queue.backlog_growing', { queued });
   }
 }, 5_000);
 
 server.listen(env.PORT, () => {
-  logger.info(`PopSauce backend listening on ${env.PORT}`);
-  logger.info('Sticky sessions must be enabled at the load balancer for websocket affinity');
+  logger.info('server.started', { port: env.PORT, nodeEnv: env.NODE_ENV });
+  logger.info('deployment.note.sticky_sessions_required');
 });

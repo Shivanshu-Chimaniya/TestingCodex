@@ -15,11 +15,14 @@ function must(key: string, fallback = '') {
 export const env = {
   NODE_ENV: process.env.NODE_ENV ?? 'development',
   PORT: Number(process.env.PORT ?? 3000),
+  MONGO_URI: process.env.MONGO_URI ?? '',
+  REDIS_URL: process.env.REDIS_URL ?? '',
   JWT_ACCESS_SECRET: must('JWT_ACCESS_SECRET', 'dev-access-secret'),
   JWT_REFRESH_SECRET: must('JWT_REFRESH_SECRET', 'dev-refresh-secret'),
   JWT_ACCESS_TTL_MINUTES: Number(process.env.JWT_ACCESS_TTL_MINUTES ?? 15),
   JWT_REFRESH_TTL_DAYS: Number(process.env.JWT_REFRESH_TTL_DAYS ?? 7),
-  MONGO_URI: process.env.MONGO_URI ?? '',
-  REDIS_URL: process.env.REDIS_URL ?? '',
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? '',
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
   CORS_ORIGIN: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  SENTRY_DSN: process.env.SENTRY_DSN ?? '',
 };

@@ -2,7 +2,9 @@ import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 import { env } from './config/env.js';
+import { logger } from './config/logger.js';
 import { errorMiddleware } from './middlewares/error.middleware.js';
+import { requestContextMiddleware } from './middlewares/requestContext.middleware.js';
 import { simpleRateLimit } from './middlewares/rateLimit.middleware.js';
 import { authMiddleware } from './middlewares/auth.middleware.js';
 import { me } from './modules/auth/auth.controller.js';
@@ -14,6 +16,20 @@ import { categoriesRouter } from './modules/categories/categories.routes.js';
 
 export function createApp() {
   const app = express();
+
+  app.use(requestContextMiddleware);
+  app.use((req, res, next) => {
+    const startedAt = Date.now();
+    res.on('finish', () => {
+      logger.info('http.request.completed', {
+        method: req.method,
+        path: req.originalUrl,
+        statusCode: res.statusCode,
+        durationMs: Date.now() - startedAt,
+      });
+    });
+    next();
+  });
 
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
   app.use(
