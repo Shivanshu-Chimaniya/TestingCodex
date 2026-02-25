@@ -6,6 +6,10 @@ export async function generateCategory(req: Request, res: Response) {
   const parsed = generateCategoryRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-  const category = await aiService.generateCategory(parsed.data);
-  return res.status(200).json({ category });
+  try {
+    const category = await aiService.generateCategory(parsed.data);
+    return res.status(200).json({ category });
+  } catch (error) {
+    return res.status(502).json({ error: (error as Error).message || 'AI_GENERATION_FAILED' });
+  }
 }
