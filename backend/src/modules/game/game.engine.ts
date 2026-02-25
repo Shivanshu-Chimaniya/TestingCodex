@@ -1,5 +1,6 @@
 import { redis } from '../../config/redis.js';
 import { nowMs } from '../../utils/time.js';
+import { enqueueSubmission } from '../performance/submission.queue.js';
 import * as roomService from '../rooms/room.service.js';
 import { canSubmitAnswer } from './antiCheat.js';
 import { normalizeAnswer } from './normalization.js';
@@ -13,6 +14,7 @@ import type {
 
 const runtimeByRoom = new Map<string, RoomRuntime>();
 const MAX_POINTS_PER_ANSWER = 250;
+const MAX_ROOM_LIFETIME_MS = 60 * 60 * 1000;
 
 function getDefaultPlayerStats(): PlayerRoundStats {
   return {
@@ -22,6 +24,16 @@ function getDefaultPlayerStats(): PlayerRoundStats {
     lastCorrectAt: null,
     duplicateCount: 0,
   };
+}
+
+async function cacheRoomSnapshot(roomCode: string) {
+  const state = getRoomState(roomCode);
+  await redis.set(`room:${roomCode}:snapshot`, JSON.stringify(state), { EX: 60 * 30 });
+}
+
+async function cacheLeaderboard(roomCode: string) {
+  const leaderboard = getLeaderboard(roomCode);
+  await redis.set(`room:${roomCode}:leaderboard`, JSON.stringify(leaderboard), { EX: 60 * 30 });
 }
 
 function getRuntime(roomCode: string): RoomRuntime {
@@ -72,6 +84,7 @@ export function getRoomState(roomCode: string) {
     roundStatus: runtime.roundStatus,
     countdownEndsAt: runtime.countdownEndsAt,
     finishedAt: runtime.finishedAt,
+    roomAgeMs: Date.now() - room.createdAt,
   };
 }
 
@@ -116,7 +129,7 @@ export function getLeaderboard(roomCode: string): LeaderboardEntry[] {
   });
 }
 
-export function beginCountdown(roomCode: string, countdownMs: number) {
+export async function beginCountdown(roomCode: string, countdownMs: number) {
   getRoomOrThrow(roomCode);
   const runtime = getRuntime(roomCode);
   const now = nowMs();
@@ -124,6 +137,7 @@ export function beginCountdown(roomCode: string, countdownMs: number) {
   runtime.roundStatus = 'countdown';
   runtime.countdownEndsAt = now + countdownMs;
   runtime.finishedAt = null;
+  await cacheRoomSnapshot(roomCode);
 
   return {
     countdownStartedAt: now,
@@ -132,7 +146,7 @@ export function beginCountdown(roomCode: string, countdownMs: number) {
   };
 }
 
-export function startRound(
+export async function startRound(
   roomCode: string,
   durationMs: number,
   options?: {
@@ -166,6 +180,8 @@ export function startRound(
     ...(options?.competitiveMode ?? {}),
   };
 
+  await cacheRoomSnapshot(roomCode);
+
   return {
     startedAt: runtime.startedAt,
     endsAt: runtime.endsAt,
@@ -173,13 +189,16 @@ export function startRound(
   };
 }
 
-export function endRound(roomCode: string, endedAt = nowMs()) {
+export async function endRound(roomCode: string, endedAt = nowMs()) {
   getRoomOrThrow(roomCode);
   const runtime = getRuntime(roomCode);
 
   runtime.roundStatus = 'finished';
   runtime.endsAt = endedAt;
   runtime.finishedAt = endedAt;
+
+  await cacheRoomSnapshot(roomCode);
+  await cacheLeaderboard(roomCode);
 
   return {
     endedAt,
@@ -188,11 +207,12 @@ export function endRound(roomCode: string, endedAt = nowMs()) {
   };
 }
 
-export function finalizeResults(roomCode: string) {
+export async function finalizeResults(roomCode: string) {
   getRoomOrThrow(roomCode);
   const runtime = getRuntime(roomCode);
 
   runtime.roundStatus = 'results';
+  await cacheLeaderboard(roomCode);
 
   return {
     leaderboard: getLeaderboard(roomCode),
@@ -228,6 +248,16 @@ export async function submitAnswer(roomCode: string, userId: string, rawAnswer: 
   const acceptedSetKey = `round:${roomCode}:accepted`;
   if (!(await redis.sIsMember(acceptedSetKey, normalized))) {
     if (!runtime.acceptedAnswers.has(normalized)) {
+      enqueueSubmission({
+        roomCode,
+        userId,
+        rawInput: rawAnswer,
+        normalizedInput: normalized,
+        isValid: false,
+        isDuplicate: false,
+        pointsAwarded: 0,
+        serverReceivedAt: new Date(now),
+      });
       return { ok: false as const, code: 'INVALID_ANSWER' };
     }
 
@@ -246,6 +276,17 @@ export async function submitAnswer(roomCode: string, userId: string, rawAnswer: 
     ) {
       playerStats.score = Math.max(0, playerStats.score - runtime.competitiveMode.duplicateDecayPoints);
     }
+
+    enqueueSubmission({
+      roomCode,
+      userId,
+      rawInput: rawAnswer,
+      normalizedInput: normalized,
+      isValid: true,
+      isDuplicate: true,
+      pointsAwarded: 0,
+      serverReceivedAt: new Date(now),
+    });
 
     return { ok: false as const, code: 'DUPLICATE_ANSWER' };
   }
@@ -267,6 +308,19 @@ export async function submitAnswer(roomCode: string, userId: string, rawAnswer: 
 
   playerStats.score += pointsAwarded;
 
+  enqueueSubmission({
+    roomCode,
+    userId,
+    rawInput: rawAnswer,
+    normalizedInput: normalized,
+    isValid: true,
+    isDuplicate: false,
+    pointsAwarded,
+    serverReceivedAt: new Date(now),
+  });
+
+  await cacheLeaderboard(roomCode);
+
   const allAnswersFound = runtime.foundAnswers.size >= runtime.acceptedAnswers.size;
 
   return {
@@ -278,4 +332,21 @@ export async function submitAnswer(roomCode: string, userId: string, rawAnswer: 
       allAnswersFound,
     },
   };
+}
+
+export async function clearRoomRuntime(roomCode: string) {
+  runtimeByRoom.delete(roomCode);
+  await redis.del(
+    `round:${roomCode}:accepted`,
+    `round:${roomCode}:found`,
+    `room:${roomCode}:snapshot`,
+    `room:${roomCode}:leaderboard`,
+  );
+}
+
+export function staleRooms(maxLifetimeMs = MAX_ROOM_LIFETIME_MS) {
+  const now = Date.now();
+  return roomService
+    .listRooms()
+    .filter((room) => now - room.createdAt > maxLifetimeMs || (room.players.length === 0 && room.status !== 'active'));
 }
