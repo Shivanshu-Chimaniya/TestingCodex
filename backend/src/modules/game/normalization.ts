@@ -1,4 +1,5 @@
 const punctuationVariants = /[’']/g;
+const punctuationNoise = /[\p{P}\p{S}]+/gu;
 
 export function normalizeAnswer(input: string) {
   return input
@@ -6,5 +7,11 @@ export function normalizeAnswer(input: string) {
     .trim()
     .toLowerCase()
     .replace(punctuationVariants, "'")
-    .replace(/\s+/g, ' ');
+    .replace(punctuationNoise, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function normalizeAnswerSet(values: string[]) {
+  return [...new Set(values.map((value) => normalizeAnswer(value)).filter((value) => value.length >= 2))];
 }

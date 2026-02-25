@@ -61,6 +61,19 @@ export function startRoom(req: Request, res: Response) {
   }
 }
 
+export function endRoom(req: Request, res: Response) {
+  if (!req.auth) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  try {
+    const room = roomService.endRoom(req.params.code, req.auth.userId);
+    return res.status(200).json({ room });
+  } catch (error) {
+    if (!(error instanceof Error)) return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR' });
+    if (error.message === 'ROOM_NOT_FOUND') return res.status(404).json({ error: error.message });
+    if (error.message === 'FORBIDDEN') return res.status(403).json({ error: error.message });
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR' });
+  }
+}
+
 export function roomSnapshot(req: Request, res: Response) {
   const room = roomService.getRoomByCode(req.params.code);
   if (!room) return res.status(404).json({ error: 'ROOM_NOT_FOUND' });

@@ -5,7 +5,7 @@ import type { Ack, AnswerSubmitPayload } from './events.js';
 export function makeAnswerHandlers(io: Server) {
   const nsp = io.of('/game');
 
-  function onAnswerSubmit(
+  async function onAnswerSubmit(
     socket: Socket,
     payload: AnswerSubmitPayload,
     ack: Ack<{ normalized: string; pointsAwarded: number }>,
@@ -13,7 +13,7 @@ export function makeAnswerHandlers(io: Server) {
     const user = socket.data.user as { id: string } | undefined;
     if (!user) return ack?.({ ok: false, code: 'UNAUTHORIZED' });
 
-    const result = gameEngine.submitAnswer(payload.roomCode, user.id, payload.answer);
+    const result = await gameEngine.submitAnswer(payload.roomCode, user.id, payload.answer);
     if (!result.ok) {
       socket.emit('answer:rejected', { roomCode: payload.roomCode, code: result.code });
       return ack?.({ ok: false, code: result.code });

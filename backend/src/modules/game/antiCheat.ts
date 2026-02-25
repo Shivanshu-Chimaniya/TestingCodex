@@ -1,10 +1,21 @@
+import { sha256 } from '../../utils/crypto.js';
 import { normalizeAnswer } from './normalization.js';
+
+const spamPattern = /(.)\1{5,}/;
+
+export function hashAnswerSet(answerSet: string[]) {
+  return sha256(answerSet.join('|'));
+}
 
 export function canSubmitAnswer(rawInput: string, recentSubmissions: number[], now = Date.now()) {
   const normalized = normalizeAnswer(rawInput);
 
   if (normalized.length < 2) {
     return { ok: false as const, code: 'INPUT_TOO_SHORT' };
+  }
+
+  if (spamPattern.test(normalized)) {
+    return { ok: false as const, code: 'SPAM_DETECTED' };
   }
 
   if (!/[a-z0-9]/i.test(normalized)) {

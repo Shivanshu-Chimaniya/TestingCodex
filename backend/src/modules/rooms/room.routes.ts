@@ -10,4 +10,5 @@ roomRouter.post('/', authMiddleware, validateBody(createRoomSchema), roomControl
 roomRouter.get('/:code', roomController.getRoom);
 roomRouter.post('/:code/join', authMiddleware, validateBody(joinRoomSchema), roomController.joinRoom);
 roomRouter.post('/:code/start', authMiddleware, roomController.startRoom);
+roomRouter.post('/:code/end', authMiddleware, roomController.endRoom);
 roomRouter.get('/:code/snapshot', roomController.roomSnapshot);
